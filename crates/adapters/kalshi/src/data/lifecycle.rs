@@ -28,6 +28,7 @@ use nautilus_model::{
     instruments::{BinaryOption, InstrumentAny},
 };
 use serde_json::{Map, Value};
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
@@ -112,11 +113,34 @@ impl LifecycleTracker {
 
     pub(super) fn apply(
         &self,
-        mut instrument: BinaryOption,
+        instrument: BinaryOption,
         stamp: ReadStamp,
         context: &Mutex<HashMap<InstrumentId, BinaryOption>>,
         sender: &EventSender<DataEvent>,
     ) -> anyhow::Result<()> {
+        self.apply_inner(instrument, stamp, context, sender, None)?;
+        Ok(())
+    }
+
+    pub(super) fn apply_active(
+        &self,
+        instrument: BinaryOption,
+        stamp: ReadStamp,
+        context: &Mutex<HashMap<InstrumentId, BinaryOption>>,
+        sender: &EventSender<DataEvent>,
+        cancellation: &CancellationToken,
+    ) -> anyhow::Result<bool> {
+        self.apply_inner(instrument, stamp, context, sender, Some(cancellation))
+    }
+
+    fn apply_inner(
+        &self,
+        mut instrument: BinaryOption,
+        stamp: ReadStamp,
+        context: &Mutex<HashMap<InstrumentId, BinaryOption>>,
+        sender: &EventSender<DataEvent>,
+        cancellation: Option<&CancellationToken>,
+    ) -> anyhow::Result<bool> {
         let (mut market, event) = metadata(&instrument)?;
 
         let source_time = match market.updated_time {
@@ -126,8 +150,8 @@ impl LifecycleTracker {
 
         let final_close = parse_instrument_close(&market, &event, instrument.ts_init)?;
         let mut state = self.state.lock().expect("lifecycle lock is not poisoned");
-        if stamp.epoch != state.epoch {
-            return Ok(());
+        if stamp.epoch != state.epoch || cancellation.is_some_and(CancellationToken::is_cancelled) {
+            return Ok(false);
         }
 
         let entry = state.entries.entry(instrument.id).or_default();
@@ -140,7 +164,7 @@ impl LifecycleTracker {
                     .contains_key(&instrument.id),
                 "fresh instrument metadata is unavailable during recovery"
             );
-            return Ok(());
+            return Ok(false);
         }
 
         let mut value = serde_json::to_value(&market)?;
@@ -152,7 +176,9 @@ impl LifecycleTracker {
 
             if source_time.is_none_or(|time| time <= *timestamp) {
                 anyhow::ensure!(
-                    source_time.is_some() || value[field] == *update,
+                    source_time.is_some()
+                        || stamp.serial < entry.observed_serial
+                        || value[field] == *update,
                     "cannot order contradictory unversioned REST metadata after lifecycle evidence"
                 );
                 value[field] = update.clone();
@@ -166,14 +192,14 @@ impl LifecycleTracker {
         }
 
         entry.publish(instrument, &market, &event, context, sender)?;
-        entry.serial = stamp.serial;
+        entry.serial = entry.serial.max(stamp.serial);
         entry.version = source_time.or(entry.version);
         entry.overlay.retain(|field, (timestamp, _)| {
             !(field == "status" && final_close.is_some())
                 && source_time.is_none_or(|time| time <= *timestamp)
         });
 
-        Ok(())
+        Ok(true)
     }
 
     pub(super) fn response_guard<'a>(
@@ -212,11 +238,11 @@ impl LifecycleTracker {
             .context("lifecycle timestamp overflow")?;
         let timestamp = UnixNanos::from(timestamp);
         let mut state = self.state.lock().expect("lifecycle lock is not poisoned");
-        let entry = state.entries.entry(id).or_default();
-        if entry.close.is_some()
-            || entry.version.is_some_and(|time| timestamp < time)
-            || entry.overlay.values().any(|(time, _)| timestamp < *time)
-        {
+        if state.entries.get(&id).is_some_and(|entry| {
+            entry.close.is_some()
+                || entry.version.is_some_and(|time| timestamp < time)
+                || entry.overlay.values().any(|(time, _)| timestamp < *time)
+        }) {
             return Ok(());
         }
 
@@ -268,7 +294,11 @@ impl LifecycleTracker {
         let mut instrument = rebuild(&instrument, &market, &event)?;
         instrument.ts_event = timestamp;
         instrument.ts_init = now;
+        state.serial += 1;
+        let observed_serial = state.serial;
+        let entry = state.entries.entry(id).or_default();
         entry.commit(instrument, &market, &event, &mut context, sender)?;
+        entry.observed_serial = observed_serial;
         for (field, value) in patch {
             entry.overlay.insert(field, (timestamp, value));
         }
@@ -334,6 +364,12 @@ pub(super) struct ReadStamp {
     serial: u64,
 }
 
+impl ReadStamp {
+    pub(super) const fn epoch(self) -> u64 {
+        self.epoch
+    }
+}
+
 #[derive(Debug, Default)]
 pub(super) struct State {
     epoch: u64,
@@ -344,6 +380,7 @@ pub(super) struct State {
 #[derive(Debug, Default)]
 struct Entry {
     serial: u64,
+    observed_serial: u64,
     version: Option<UnixNanos>,
     overlay: HashMap<String, (UnixNanos, Value)>,
     definition: Option<Value>,
@@ -362,7 +399,10 @@ impl Entry {
         final_close: Option<InstrumentClose>,
         serial: u64,
     ) -> anyhow::Result<bool> {
-        if source_time.is_none()
+        let prior_to_observe = source_time.is_none() && serial < self.observed_serial;
+
+        if !prior_to_observe
+            && source_time.is_none()
             && self.version.is_some()
             && (final_close.is_none() || self.close.is_some())
             && let Some(previous) = &self.definition
@@ -388,10 +428,18 @@ impl Entry {
             }
         }
 
-        Ok(!(source_time
-            .zip(self.version)
-            .is_some_and(|(incoming, previous)| incoming < previous)
-            || serial < self.serial))
+        if prior_to_observe && final_close.is_none() {
+            return Ok(false);
+        }
+
+        let accepted = match (source_time, self.version) {
+            (Some(incoming), Some(previous)) => {
+                incoming > previous || (incoming == previous && serial >= self.serial)
+            }
+            _ => serial >= self.serial,
+        };
+
+        Ok(accepted)
     }
 
     fn accepts_revisions(&self, instrument: &BinaryOption) -> anyhow::Result<bool> {
@@ -1568,5 +1616,327 @@ mod tests {
         assert_eq!(restored_event, event);
         let rebuilt = rebuild(&instrument, &restored_market, &restored_event).unwrap();
         assert_eq!(rebuilt.info, instrument.info);
+    }
+
+    #[rstest]
+    fn overlapping_periodic_read_with_newer_venue_metadata_wins_over_higher_serial() {
+        let tracker = LifecycleTracker::default();
+        let (mut market, event) = source("live");
+        let now = nanos(market.open_time);
+        let id = crate::common::parse::parse_instrument_id(&market.ticker).unwrap();
+        let context = Mutex::new(HashMap::new());
+        let (sender, _events) = tokio::sync::mpsc::unbounded_channel();
+        let sender = sender.into();
+
+        // Initial T0 snapshot
+        market.updated_time = Field::Value(market.open_time);
+        market.yes_sub_title = "revision-0".into();
+        tracker
+            .apply(
+                parse_instrument(&market, &event, now).unwrap(),
+                tracker.begin_read(),
+                &context,
+                &sender,
+            )
+            .unwrap();
+
+        // Periodic read acquires an earlier serial, then a lifecycle refresh acquires a higher serial with T1 < T2
+        let periodic_stamp = tracker.begin_read();
+        let lifecycle_stamp = tracker.begin_read();
+
+        market.updated_time = Field::Value(
+            market
+                .open_time
+                .checked_add(jiff::SignedDuration::from_secs(1))
+                .unwrap(),
+        );
+        market.yes_sub_title = "revision-1".into();
+        tracker
+            .apply(
+                parse_instrument(&market, &event, now).unwrap(),
+                lifecycle_stamp,
+                &context,
+                &sender,
+            )
+            .unwrap();
+
+        market.updated_time = Field::Value(
+            market
+                .open_time
+                .checked_add(jiff::SignedDuration::from_secs(2))
+                .unwrap(),
+        );
+        market.yes_sub_title = "revision-2".into();
+        tracker
+            .apply(
+                parse_instrument(&market, &event, now).unwrap(),
+                periodic_stamp,
+                &context,
+                &sender,
+            )
+            .unwrap();
+
+        assert_eq!(
+            context.lock().unwrap()[&id].info.as_ref().unwrap()["market"]["yes_sub_title"],
+            "revision-2"
+        );
+    }
+
+    #[rstest]
+    #[case::initially_unversioned(false)]
+    #[case::initially_versioned(true)]
+    fn older_unversioned_snapshot_after_ws_update_is_ignored_while_newer_conflict_fails(
+        #[case] versioned: bool,
+    ) {
+        let tracker = LifecycleTracker::default();
+        let (mut market, event) = source("live");
+        let now = nanos(market.open_time);
+
+        if !versioned {
+            market.updated_time = Field::Missing;
+        }
+        market.yes_sub_title = "initial".into();
+        let initial = parse_instrument(&market, &event, now).unwrap();
+        let id = initial.id;
+        let context = Mutex::new(HashMap::new());
+        let (sender, _events) = tokio::sync::mpsc::unbounded_channel();
+        let sender = sender.into();
+
+        tracker
+            .apply(initial, tracker.begin_read(), &context, &sender)
+            .unwrap();
+
+        // Start a REST read before a WebSocket lifecycle update arrives
+        let stale_stamp = tracker.begin_read();
+
+        let mut ws_frame = frames()[5].clone();
+        ws_frame.msg["yes_sub_title"] = "ws-updated".into();
+        tracker
+            .observe(id, &ws_frame, &context, &sender, now)
+            .unwrap();
+
+        // Older unversioned REST snapshot captured before observe() must be ignored cleanly
+        let mut stale_market = market.clone();
+        stale_market.updated_time = Field::Missing;
+        stale_market.yes_sub_title = "initial".into();
+        tracker
+            .apply(
+                parse_instrument(&stale_market, &event, now).unwrap(),
+                stale_stamp,
+                &context,
+                &sender,
+            )
+            .unwrap();
+
+        assert_eq!(
+            context.lock().unwrap()[&id].info.as_ref().unwrap()["market"]["yes_sub_title"],
+            "ws-updated"
+        );
+
+        // Newer unversioned REST snapshot initiated after observe() with contradictory metadata must still error
+        let mut contradictory = market;
+        contradictory.updated_time = Field::Missing;
+        contradictory.yes_sub_title = "contradictory".into();
+        let err = tracker
+            .apply(
+                parse_instrument(&contradictory, &event, now).unwrap(),
+                tracker.begin_read(),
+                &context,
+                &sender,
+            )
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "cannot order contradictory unversioned REST metadata after lifecycle evidence"
+        );
+    }
+
+    #[rstest]
+    fn delayed_versioned_read_does_not_overwrite_later_unversioned_read() {
+        let tracker = LifecycleTracker::default();
+        let (mut market, event) = source("live");
+        let now = nanos(market.open_time);
+        let id = crate::common::parse::parse_instrument_id(&market.ticker).unwrap();
+        let context = Mutex::new(HashMap::new());
+        let (sender, _events) = tokio::sync::mpsc::unbounded_channel();
+        let sender = sender.into();
+
+        // Initial unversioned snapshot
+        market.updated_time = Field::Missing;
+        market.status = MarketStatus::Active;
+        tracker
+            .apply(
+                parse_instrument(&market, &event, now).unwrap(),
+                tracker.begin_read(),
+                &context,
+                &sender,
+            )
+            .unwrap();
+
+        // Periodic read starts first (gets versioned Active), then lifecycle read applies unversioned Inactive
+        let periodic_stamp = tracker.begin_read();
+        let lifecycle_stamp = tracker.begin_read();
+
+        let mut paused = market.clone();
+        paused.status = MarketStatus::Inactive;
+        tracker
+            .apply(
+                parse_instrument(&paused, &event, now).unwrap(),
+                lifecycle_stamp,
+                &context,
+                &sender,
+            )
+            .unwrap();
+
+        market.updated_time = Field::Value(market.open_time);
+        market.status = MarketStatus::Active;
+        tracker
+            .apply(
+                parse_instrument(&market, &event, now).unwrap(),
+                periodic_stamp,
+                &context,
+                &sender,
+            )
+            .unwrap();
+
+        let cached = context.lock().unwrap()[&id].clone();
+        let (current, _) = metadata(&cached).unwrap();
+        assert_eq!(current.status, MarketStatus::Inactive);
+    }
+
+    #[rstest]
+    fn unversioned_first_final_close_after_ws_observe_is_applied() {
+        let tracker = LifecycleTracker::default();
+        let (mut market, event) = source("live");
+        let now = nanos(market.open_time);
+        market.updated_time = Field::Missing;
+        let initial = parse_instrument(&market, &event, now).unwrap();
+        let id = initial.id;
+        let context = Mutex::new(HashMap::new());
+        let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
+        let sender = sender.into();
+
+        tracker
+            .subscribe(id, true, true, &context, &sender, now)
+            .unwrap();
+        tracker
+            .apply(initial, tracker.begin_read(), &context, &sender)
+            .unwrap();
+
+        while events.try_recv().is_ok() {}
+
+        // Periodic read starts before WS lifecycle frame arrives
+        let periodic_stamp = tracker.begin_read();
+
+        let mut ws_frame = frames()[5].clone();
+        ws_frame.msg["event_type"] = "settled".into();
+        ws_frame.msg["yes_sub_title"] = "ws-settled".into();
+        tracker
+            .observe(id, &ws_frame, &context, &sender, now)
+            .unwrap();
+
+        // Unversioned periodic response carrying the first valid final close must still be applied
+        let mut finalized = market;
+        finalized.status = MarketStatus::Finalized;
+        finalized.settlement_value_dollars =
+            Field::Value(crate::http::models::FixedPoint("0.65".parse().unwrap()));
+        finalized.settlement_ts = Field::Value(
+            finalized
+                .close_time
+                .checked_add(jiff::SignedDuration::from_secs(60))
+                .unwrap(),
+        );
+        tracker
+            .apply(
+                parse_instrument(&finalized, &event, now).unwrap(),
+                periodic_stamp,
+                &context,
+                &sender,
+            )
+            .unwrap();
+
+        let output: Vec<_> = std::iter::from_fn(|| events.try_recv().ok()).collect();
+        let closes: Vec<_> = output
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::Data(Data::InstrumentClose(close)) => Some(*close),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(closes.len(), 1);
+        assert_eq!(
+            closes[0].close_price.as_decimal(),
+            "0.65".parse::<Decimal>().unwrap()
+        );
+    }
+
+    #[rstest]
+    fn fresh_contradictory_unversioned_snapshot_after_versioned_final_close_fails() {
+        let tracker = LifecycleTracker::default();
+        let (mut market, event) = source("live");
+        let now = nanos(market.open_time);
+        market.updated_time = Field::Value(market.open_time);
+        market.status = MarketStatus::Finalized;
+        market.settlement_value_dollars =
+            Field::Value(crate::http::models::FixedPoint("0.80".parse().unwrap()));
+        market.settlement_ts = Field::Value(
+            market
+                .close_time
+                .checked_add(jiff::SignedDuration::from_secs(60))
+                .unwrap(),
+        );
+        let context = Mutex::new(HashMap::new());
+        let (sender, _events) = tokio::sync::mpsc::unbounded_channel();
+        let sender = sender.into();
+
+        tracker
+            .apply(
+                parse_instrument(&market, &event, now).unwrap(),
+                tracker.begin_read(),
+                &context,
+                &sender,
+            )
+            .unwrap();
+
+        // Fresh unversioned non-final response with contradictory metadata must still be fatal
+        let mut contradictory = market;
+        contradictory.updated_time = Field::Missing;
+        contradictory.status = MarketStatus::Active;
+        contradictory.settlement_value_dollars = Field::Missing;
+        contradictory.settlement_ts = Field::Missing;
+        let err = tracker
+            .apply(
+                parse_instrument(&contradictory, &event, now).unwrap(),
+                tracker.begin_read(),
+                &context,
+                &sender,
+            )
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "cannot order contradictory unversioned REST metadata after lifecycle evidence"
+        );
+    }
+
+    #[rstest]
+    fn apply_active_does_not_publish_when_canceled_after_read() {
+        let tracker = LifecycleTracker::default();
+        let (market, event) = source("live");
+        let now = nanos(market.open_time);
+        let instrument = parse_instrument(&market, &event, now).unwrap();
+        let context = Mutex::new(HashMap::new());
+        let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
+        let sender = sender.into();
+        let cancellation = CancellationToken::new();
+
+        let stamp = tracker.begin_read();
+        cancellation.cancel();
+
+        let applied = tracker
+            .apply_active(instrument, stamp, &context, &sender, &cancellation)
+            .unwrap();
+        assert!(!applied);
+        assert!(events.try_recv().is_err());
+        assert!(context.lock().unwrap().is_empty());
     }
 }

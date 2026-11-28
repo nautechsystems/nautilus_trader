@@ -900,6 +900,14 @@ struct Session {
     refresh_interval: Duration,
 }
 
+struct CancelOnDrop(CancellationToken);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
 impl Session {
     async fn run(
         self,
@@ -938,6 +946,47 @@ impl Session {
         refresh_tick.tick().await;
         let mut health_tick = time::interval(Duration::from_millis(100));
         health_tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+        let session_cancel = cancellation.child_token();
+        let _cancel_guard = CancelOnDrop(session_cancel.clone());
+        let mut scan_cancel = session_cancel.child_token();
+        let mut refresh_done = None;
+
+        let result = self
+            .receive_loop(
+                receiver,
+                cancellation,
+                &session_cancel,
+                &mut scan_cancel,
+                &mut refresh_done,
+                &mut refresh_tick,
+                &mut health_tick,
+                startup,
+            )
+            .await;
+
+        scan_cancel.cancel();
+        session_cancel.cancel();
+        self.lifecycle.begin_recovery();
+
+        if let Some(done) = refresh_done {
+            let _ = done.await;
+        }
+
+        result
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    async fn receive_loop(
+        &self,
+        receiver: &mut tokio::sync::mpsc::UnboundedReceiver<KalshiWsEvent>,
+        cancellation: &CancellationToken,
+        session_cancel: &CancellationToken,
+        scan_cancel: &mut CancellationToken,
+        refresh_done: &mut Option<tokio::sync::oneshot::Receiver<RefreshOutcome>>,
+        refresh_tick: &mut time::Interval,
+        health_tick: &mut time::Interval,
+        startup: &mut Option<tokio::sync::oneshot::Sender<anyhow::Result<()>>>,
+    ) -> anyhow::Result<()> {
         let mut generation = None;
         let mut lifecycle_sequence = None;
         let mut lifecycle_recovered = false;
@@ -946,8 +995,36 @@ impl Session {
             let event = tokio::select! {
                 biased;
                 () = cancellation.cancelled() => return Ok(()),
-                _ = health_tick.tick() => { anyhow::ensure!(!self.sender.is_closed(), "data event receiver closed"); self.books.monitor(&self.ws_client, &self.tasks); self.lifecycle.tick(&self.context, &self.sender, self.clock.get_time_ns())?; continue; },
-                _ = refresh_tick.tick() => { self.refresh(&mut refresh_tick, cancellation).await?; continue; },
+                _ = health_tick.tick() => {
+                    anyhow::ensure!(!self.sender.is_closed(), "data event receiver closed");
+                    self.books.monitor(&self.ws_client, &self.tasks);
+                    self.lifecycle.tick(&self.context, &self.sender, self.clock.get_time_ns())?;
+                    continue;
+                },
+                result = async {
+                    match refresh_done.as_mut() {
+                        Some(done) => done.await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    *refresh_done = None;
+
+                    match result {
+                        Ok(RefreshOutcome::Completed) => refresh_tick.reset(),
+                        Ok(RefreshOutcome::Canceled) if cancellation.is_cancelled() => return Ok(()),
+                        Ok(RefreshOutcome::Canceled) => {
+                            anyhow::bail!("Kalshi periodic metadata refresh canceled unexpectedly");
+                        }
+                        Ok(RefreshOutcome::Failed(e)) => return Err(e),
+                        Err(_) if cancellation.is_cancelled() => return Ok(()),
+                        Err(_) => anyhow::bail!("Kalshi periodic metadata refresh task exited unexpectedly"),
+                    }
+                    continue;
+                },
+                _ = refresh_tick.tick(), if refresh_done.is_none() => {
+                    *refresh_done = self.spawn_refresh(scan_cancel);
+                    continue;
+                },
                 event = receiver.recv() => event.context("WebSocket event receiver closed")?,
             };
 
@@ -958,9 +1035,20 @@ impl Session {
             }
 
             let new_generation = generation != Some(current);
+
             if new_generation {
-                self.lifecycle.begin_recovery();
-                self.refresh(&mut refresh_tick, cancellation).await?;
+                if !self
+                    .handle_generation_change(
+                        scan_cancel,
+                        session_cancel,
+                        refresh_done,
+                        refresh_tick,
+                        cancellation,
+                    )
+                    .await?
+                {
+                    return Ok(());
+                }
                 generation = Some(current);
                 lifecycle_sequence = None;
                 lifecycle_recovered = false;
@@ -969,7 +1057,7 @@ impl Session {
             if matches!(&event, KalshiWsEvent::Message { message: KalshiWsMessage::Subscribed { msg, .. }, .. } if msg.channel == KalshiChannel::MarketLifecycleV2)
             {
                 if !new_generation {
-                    self.refresh(&mut refresh_tick, cancellation).await?;
+                    self.refresh(refresh_tick, cancellation).await?;
                 }
 
                 lifecycle_recovered = true;
@@ -977,7 +1065,7 @@ impl Session {
 
             if matches!(&event, KalshiWsEvent::Ready { .. }) {
                 if !lifecycle_recovered {
-                    self.refresh(&mut refresh_tick, cancellation).await?;
+                    self.refresh(refresh_tick, cancellation).await?;
                 }
 
                 lifecycle_recovered = true;
@@ -988,12 +1076,7 @@ impl Session {
             }
 
             if !self
-                .sequence(
-                    &event,
-                    &mut lifecycle_sequence,
-                    &mut refresh_tick,
-                    cancellation,
-                )
+                .sequence(&event, &mut lifecycle_sequence, refresh_tick, cancellation)
                 .await?
             {
                 continue;
@@ -1011,7 +1094,7 @@ impl Session {
                     message: KalshiWsMessage::MarketLifecycleV2(data),
                     ..
                 } => {
-                    self.receive_lifecycle(&data, &mut refresh_tick, cancellation)
+                    self.receive_lifecycle(&data, refresh_tick, cancellation)
                         .await?;
                 }
                 KalshiWsEvent::Message { message, .. } => self.dispatch(message)?,
@@ -1105,6 +1188,66 @@ impl Session {
         .await?;
         refresh_tick.reset();
         Ok(())
+    }
+
+    async fn handle_generation_change(
+        &self,
+        scan_cancel: &mut CancellationToken,
+        session_cancel: &CancellationToken,
+        refresh_done: &mut Option<tokio::sync::oneshot::Receiver<RefreshOutcome>>,
+        refresh_tick: &mut time::Interval,
+        cancellation: &CancellationToken,
+    ) -> anyhow::Result<bool> {
+        scan_cancel.cancel();
+
+        if let Some(done) = refresh_done.take() {
+            match done.await {
+                Ok(RefreshOutcome::Completed | RefreshOutcome::Canceled) => {}
+                Ok(RefreshOutcome::Failed(e)) => return Err(e),
+                Err(_) if cancellation.is_cancelled() => return Ok(false),
+                Err(_) => {
+                    anyhow::bail!("Kalshi periodic metadata refresh task exited unexpectedly");
+                }
+            }
+        }
+
+        *scan_cancel = session_cancel.child_token();
+        self.lifecycle.begin_recovery();
+        self.refresh(refresh_tick, cancellation).await?;
+        Ok(true)
+    }
+
+    fn spawn_refresh(
+        &self,
+        cancellation: &CancellationToken,
+    ) -> Option<tokio::sync::oneshot::Receiver<RefreshOutcome>> {
+        let provider = Arc::clone(&self.provider);
+        let instruments = self.instruments.clone();
+        let context = Arc::clone(&self.context);
+        let lifecycle = Arc::clone(&self.lifecycle);
+        let sender = self.sender.clone();
+        let cancellation = cancellation.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        let spawned = self.tasks.spawn(async move {
+            let outcome = refresh_outcome(
+                &provider,
+                &instruments,
+                &context,
+                &lifecycle,
+                &sender,
+                &cancellation,
+            )
+            .await;
+            let _ = tx.send(outcome);
+        });
+
+        if let Err(e) = spawned {
+            log::warn!("Failed to spawn Kalshi background metadata refresh task: {e}");
+            return None;
+        }
+
+        Some(rx)
     }
 
     fn recheck_settlement(&self, id: InstrumentId) -> anyhow::Result<()> {
@@ -1240,17 +1383,44 @@ fn subscription(ids: &[InstrumentId], quotes: bool) -> anyhow::Result<KalshiSubs
     })
 }
 
-async fn refresh(
+enum RefreshOutcome {
+    Completed,
+    Canceled,
+    Failed(anyhow::Error),
+}
+
+impl RefreshOutcome {
+    fn into_result(self) -> anyhow::Result<()> {
+        match self {
+            Self::Completed => Ok(()),
+            Self::Canceled => anyhow::bail!("metadata refresh canceled"),
+            Self::Failed(e) => Err(e),
+        }
+    }
+}
+
+async fn refresh_outcome(
     provider: &KalshiInstrumentProvider,
     ids: &[InstrumentId],
     context: &Mutex<HashMap<InstrumentId, BinaryOption>>,
     lifecycle: &LifecycleTracker,
     sender: &EventSender<DataEvent>,
     cancellation: &CancellationToken,
-) -> anyhow::Result<()> {
-    let stamp = lifecycle.begin_read();
+) -> RefreshOutcome {
+    let mut epoch = None;
 
     for id in ids {
+        if cancellation.is_cancelled() {
+            return RefreshOutcome::Canceled;
+        }
+
+        let stamp = lifecycle.begin_read();
+        let expected_epoch = *epoch.get_or_insert(stamp.epoch());
+
+        if stamp.epoch() != expected_epoch {
+            return RefreshOutcome::Completed;
+        }
+
         let request = RequestInstrument::new(
             *id,
             None,
@@ -1263,13 +1433,35 @@ async fn refresh(
 
         let instrument = tokio::select! {
             biased;
-            () = cancellation.cancelled() => anyhow::bail!("metadata refresh canceled"),
-            result = provider.load_instrument(&request) => result?,
+            () = cancellation.cancelled() => return RefreshOutcome::Canceled,
+            result = provider.load_instrument(&request) => match result {
+                Ok(instrument) => instrument,
+                Err(e) => return RefreshOutcome::Failed(e),
+            },
         };
-        lifecycle.apply(instrument, stamp, context, sender)?;
+
+        match lifecycle.apply_active(instrument, stamp, context, sender, cancellation) {
+            Ok(true) => {}
+            Ok(false) if cancellation.is_cancelled() => return RefreshOutcome::Canceled,
+            Ok(false) => return RefreshOutcome::Completed,
+            Err(e) => return RefreshOutcome::Failed(e),
+        }
     }
 
-    Ok(())
+    RefreshOutcome::Completed
+}
+
+async fn refresh(
+    provider: &KalshiInstrumentProvider,
+    ids: &[InstrumentId],
+    context: &Mutex<HashMap<InstrumentId, BinaryOption>>,
+    lifecycle: &LifecycleTracker,
+    sender: &EventSender<DataEvent>,
+    cancellation: &CancellationToken,
+) -> anyhow::Result<()> {
+    refresh_outcome(provider, ids, context, lifecycle, sender, cancellation)
+        .await
+        .into_result()
 }
 
 #[cfg(test)]
@@ -1536,8 +1728,6 @@ mod tests {
     #[tokio::test]
     async fn slow_periodic_refresh_yields_to_queued_market_data() {
         let peer = peer::Peer::new().await;
-        peer.response_gate
-            .forget_permits(tokio::sync::Semaphore::MAX_PERMITS);
         let fixtures: Value =
             serde_json::from_str(include_str!("../test_data/instruments.json")).unwrap();
         let market: Market =
@@ -1557,10 +1747,8 @@ mod tests {
         ));
 
         let (ws_client, _events) = KalshiWebSocketClient::new(peer.config.clone()).unwrap();
-
         let tasks = TaskGroup::new();
-
-        let refresh_interval = Duration::from_millis(1);
+        let refresh_interval = Duration::from_millis(20);
 
         let session = Session {
             provider,
@@ -1584,22 +1772,24 @@ mod tests {
         };
 
         let (input, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (startup, initialized) = tokio::sync::oneshot::channel();
         let cancellation = CancellationToken::new();
 
         // Keep the session on the test's local runtime
-        let session = session.run(
-            receiver,
-            cancellation.clone(),
-            tokio::sync::oneshot::channel().0,
-        );
-
+        let session = session.run(receiver, cancellation.clone(), startup);
         let run = tokio::spawn(session); // tokio-import-ok
 
-        let result = time::timeout(Duration::from_secs(1), async {
-            peer.wait_requests(1).await;
-            tokio::time::pause();
-            tokio::time::advance(refresh_interval * 2).await;
-            tokio::time::resume();
+        let tick = time::timeout(Duration::from_secs(5), async {
+            input.send(KalshiWsEvent::Ready { generation: 0 }).unwrap();
+            initialized.await.unwrap().unwrap();
+
+            while output.try_recv().is_ok() {}
+
+            peer.response_gate
+                .forget_permits(tokio::sync::Semaphore::MAX_PERMITS);
+
+            let baseline = peer.requests.load(Ordering::SeqCst);
+            peer.wait_requests(baseline + 1).await;
 
             let payloads: Value =
                 serde_json::from_str(include_str!("../test_data/market_data.json")).unwrap();
@@ -1616,23 +1806,594 @@ mod tests {
                 })
                 .unwrap();
 
+            // Assert market data is delivered while the periodic REST response is still held
+            let tick = loop {
+                if let DataEvent::Data(Data::Trade(tick)) = output.recv().await.unwrap() {
+                    break tick;
+                }
+            };
+            assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 1);
+
+            peer.response_gate
+                .add_permits(tokio::sync::Semaphore::MAX_PERMITS);
+            tick
+        })
+        .await
+        .expect("queued trade must progress while periodic refresh REST response is held");
+
+        cancellation.cancel();
+        run.await.unwrap();
+        assert_eq!(tick.instrument_id, id);
+        assert_eq!(tick.size.as_decimal(), "7.25".parse().unwrap());
+        assert_eq!(tick.price.as_decimal(), "0.123456".parse().unwrap());
+    }
+
+    #[tokio::test]
+    async fn periodic_refresh_coalesces_in_flight_requests() {
+        let peer = peer::Peer::new().await;
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../test_data/instruments.json")).unwrap();
+        let market: Market =
+            serde_json::from_value(fixtures["definitions"]["live"]["market"].clone()).unwrap();
+        let event: Event =
+            serde_json::from_value(fixtures["definitions"]["live"]["event"].clone()).unwrap();
+        let instrument = parse_instrument(&market, &event, UnixNanos::from(1)).unwrap();
+        let id = instrument.id;
+        let (sender, _output) = tokio::sync::mpsc::unbounded_channel();
+        let sender: EventSender<DataEvent> = sender.into();
+        let clock = get_atomic_clock_realtime();
+
+        let provider = Arc::new(KalshiInstrumentProvider::new(
+            KalshiHttpClient::new(&peer.config).unwrap(),
+            clock,
+            sender.clone(),
+        ));
+
+        let (ws_client, _events) = KalshiWebSocketClient::new(peer.config.clone()).unwrap();
+        let tasks = TaskGroup::new();
+
+        let session = Session {
+            provider,
+            lifecycle: Arc::default(),
+            books: BookSyncTracker::new(&[id], Duration::from_secs(10)),
+            tasks: tasks.spawner().unwrap(),
+            instruments: vec![id],
+            context: Arc::new(Mutex::new(HashMap::from([(id, instrument)]))),
+            demand: Arc::new(Mutex::new(HashMap::default())),
+            sender,
+            connected: Arc::new(AtomicBool::new(true)),
+            ws_client,
+            clock,
+            refresh_interval: Duration::from_millis(80),
+        };
+
+        let (input, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (startup, initialized) = tokio::sync::oneshot::channel();
+        let cancellation = CancellationToken::new();
+
+        let session = session.run(receiver, cancellation.clone(), startup);
+        let run = tokio::spawn(session); // tokio-import-ok
+
+        let expected_total = time::timeout(Duration::from_secs(5), async {
+            input.send(KalshiWsEvent::Ready { generation: 0 }).unwrap();
+            initialized.await.unwrap().unwrap();
+
+            peer.response_gate
+                .forget_permits(tokio::sync::Semaphore::MAX_PERMITS);
+
+            let baseline = peer.requests.load(Ordering::SeqCst);
+            peer.wait_requests(baseline + 1).await;
+
+            // Multiple refresh intervals elapse while the first request is held; no second cycle starts
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 1);
+
+            // Release only the 3 REST requests of this single refresh cycle
+            peer.response_gate.add_permits(3);
+            peer.wait_requests(baseline + 3).await;
+            cancellation.cancel();
+            baseline + 3
+        })
+        .await
+        .expect("periodic refresh coalescing timed out");
+
+        run.await.unwrap();
+        assert_eq!(peer.requests.load(Ordering::SeqCst), expected_total);
+    }
+
+    #[tokio::test]
+    async fn periodic_refresh_failure_stops_stream() {
+        let peer = peer::Peer::new().await;
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../test_data/instruments.json")).unwrap();
+        let mut market_value = fixtures["definitions"]["live"]["market"].clone();
+        market_value["status"] = "finalized".into();
+        market_value["settlement_value_dollars"] = "1.00".into();
+        market_value["settlement_ts"] = "2026-10-17T03:45:01Z".into();
+        *peer.market.lock().unwrap() = Some(market_value.clone());
+
+        let market: Market = serde_json::from_value(market_value.clone()).unwrap();
+        let event: Event =
+            serde_json::from_value(fixtures["definitions"]["live"]["event"].clone()).unwrap();
+        let instrument = parse_instrument(&market, &event, UnixNanos::from(1)).unwrap();
+        let id = instrument.id;
+        let (sender, _output) = tokio::sync::mpsc::unbounded_channel();
+        let sender: EventSender<DataEvent> = sender.into();
+        let clock = get_atomic_clock_realtime();
+
+        let provider = Arc::new(KalshiInstrumentProvider::new(
+            KalshiHttpClient::new(&peer.config).unwrap(),
+            clock,
+            sender.clone(),
+        ));
+
+        let (ws_client, _events) = KalshiWebSocketClient::new(peer.config.clone()).unwrap();
+        let tasks = TaskGroup::new();
+        let connected = Arc::new(AtomicBool::new(true));
+
+        let session = Session {
+            provider,
+            lifecycle: Arc::default(),
+            books: BookSyncTracker::new(&[id], Duration::from_secs(10)),
+            tasks: tasks.spawner().unwrap(),
+            instruments: vec![id],
+            context: Arc::new(Mutex::new(HashMap::from([(id, instrument)]))),
+            demand: Arc::new(Mutex::new(HashMap::default())),
+            sender,
+            connected: Arc::clone(&connected),
+            ws_client,
+            clock,
+            refresh_interval: Duration::from_millis(20),
+        };
+
+        let (input, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (startup, initialized) = tokio::sync::oneshot::channel();
+        let cancellation = CancellationToken::new();
+
+        let session = session.run(receiver, cancellation.clone(), startup);
+        let run = tokio::spawn(session); // tokio-import-ok
+
+        time::timeout(Duration::from_secs(5), async {
+            input.send(KalshiWsEvent::Ready { generation: 0 }).unwrap();
+            initialized.await.unwrap().unwrap();
+
+            // Return conflicting settlement metadata on the next periodic refresh
+            market_value["settlement_value_dollars"] = "0.00".into();
+            *peer.market.lock().unwrap() = Some(market_value);
+
+            run.await.unwrap();
+        })
+        .await
+        .expect("conflicting settlement metadata during periodic refresh must stop stream");
+
+        assert!(!connected.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn periodic_refresh_waits_interval_after_completion() {
+        let peer = peer::Peer::new().await;
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../test_data/instruments.json")).unwrap();
+        let market: Market =
+            serde_json::from_value(fixtures["definitions"]["live"]["market"].clone()).unwrap();
+        let event: Event =
+            serde_json::from_value(fixtures["definitions"]["live"]["event"].clone()).unwrap();
+        let instrument = parse_instrument(&market, &event, UnixNanos::from(1)).unwrap();
+        let id = instrument.id;
+        let (sender, mut output) = tokio::sync::mpsc::unbounded_channel();
+        let sender: EventSender<DataEvent> = sender.into();
+        let clock = get_atomic_clock_realtime();
+
+        let provider = Arc::new(KalshiInstrumentProvider::new(
+            KalshiHttpClient::new(&peer.config).unwrap(),
+            clock,
+            sender.clone(),
+        ));
+
+        let (ws_client, _events) = KalshiWebSocketClient::new(peer.config.clone()).unwrap();
+        let tasks = TaskGroup::new();
+        let refresh_interval = Duration::from_millis(300);
+
+        let session = Session {
+            provider,
+            lifecycle: Arc::default(),
+            books: BookSyncTracker::new(&[id], Duration::from_secs(10)),
+            tasks: tasks.spawner().unwrap(),
+            instruments: vec![id],
+            context: Arc::new(Mutex::new(HashMap::from([(id, instrument)]))),
+            demand: Arc::new(Mutex::new(HashMap::default())),
+            sender,
+            connected: Arc::new(AtomicBool::new(true)),
+            ws_client,
+            clock,
+            refresh_interval,
+        };
+
+        let (input, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (startup, initialized) = tokio::sync::oneshot::channel();
+        let cancellation = CancellationToken::new();
+
+        let session = session.run(receiver, cancellation.clone(), startup);
+        let run = tokio::spawn(session); // tokio-import-ok
+
+        time::timeout(Duration::from_secs(5), async {
+            input.send(KalshiWsEvent::Ready { generation: 0 }).unwrap();
+            initialized.await.unwrap().unwrap();
+
+            while output.try_recv().is_ok() {}
+
+            peer.response_gate
+                .forget_permits(tokio::sync::Semaphore::MAX_PERMITS);
+
+            let baseline = peer.requests.load(Ordering::SeqCst);
+            peer.wait_requests(baseline + 1).await;
+
+            // Hold the first periodic refresh longer than refresh_interval
+            tokio::time::sleep(Duration::from_millis(350)).await;
+            assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 1);
+
+            // Release the first periodic refresh and observe its completion via emitted definition
+            peer.revision.store(2, Ordering::SeqCst);
+            peer.response_gate.add_permits(3);
+
+            loop {
+                if matches!(
+                    output.recv().await.unwrap(),
+                    DataEvent::Data(Data::Instrument(_))
+                ) {
+                    break;
+                }
+            }
+            assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 3);
+
+            // Next refresh must wait refresh_interval after completion, not fire immediately
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            assert_eq!(peer.requests.load(Ordering::SeqCst), baseline + 3);
+
+            peer.wait_requests(baseline + 4).await;
+            peer.response_gate
+                .add_permits(tokio::sync::Semaphore::MAX_PERMITS);
+        })
+        .await
+        .expect("periodic refresh interval pacing timed out");
+
+        cancellation.cancel();
+        run.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn periodic_scan_accepts_newer_metadata_after_lifecycle_refresh_on_other_market() {
+        let peer = peer::Peer::new().await;
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../test_data/instruments.json")).unwrap();
+        let mut market_a: Market =
+            serde_json::from_value(fixtures["definitions"]["live"]["market"].clone()).unwrap();
+        let mut market_b = market_a.clone();
+        let id_a = parse_instrument_id("KXBTC15M-26OCT162345-45").unwrap();
+        let id_b = parse_instrument_id("KXETH15M-26OCT162345-45").unwrap();
+        market_a.ticker = id_a.symbol.as_str().to_owned();
+        market_b.ticker = id_b.symbol.as_str().to_owned();
+
+        let event: Event =
+            serde_json::from_value(fixtures["definitions"]["live"]["event"].clone()).unwrap();
+        let inst_a = parse_instrument(&market_a, &event, UnixNanos::from(1)).unwrap();
+        let inst_b = parse_instrument(&market_b, &event, UnixNanos::from(1)).unwrap();
+
+        let context = Arc::new(Mutex::new(HashMap::from([(id_a, inst_a), (id_b, inst_b)])));
+        let lifecycle = Arc::new(LifecycleTracker::default());
+        let (sender, _output) = tokio::sync::mpsc::unbounded_channel();
+        let sender: EventSender<DataEvent> = sender.into();
+        let clock = get_atomic_clock_realtime();
+        let provider = Arc::new(KalshiInstrumentProvider::new(
+            KalshiHttpClient::new(&peer.config).unwrap(),
+            clock,
+            sender.clone(),
+        ));
+        let cancellation = CancellationToken::new();
+
+        // Hold the periodic scan while it is fetching market A
+        peer.response_gate
+            .forget_permits(tokio::sync::Semaphore::MAX_PERMITS);
+
+        let scan = tokio::spawn({
+            let provider = Arc::clone(&provider);
+            let context = Arc::clone(&context);
+            let lifecycle = Arc::clone(&lifecycle);
+            let sender = sender.clone();
+            let cancellation = cancellation.clone();
+            async move {
+                refresh(
+                    &provider,
+                    &[id_a, id_b],
+                    &context,
+                    &lifecycle,
+                    &sender,
+                    &cancellation,
+                )
+                .await
+            }
+        }); // tokio-import-ok
+
+        time::timeout(Duration::from_secs(5), peer.wait_requests(1))
+            .await
+            .expect("timed out waiting for market A request");
+
+        // Advance market B's lifecycle serial while market A is still in flight
+        market_b.yes_sub_title = "revision-1".to_owned();
+        let inst_b_rev1 = parse_instrument(&market_b, &event, UnixNanos::from(2)).unwrap();
+        let b_stamp = lifecycle.begin_read();
+        lifecycle
+            .apply(inst_b_rev1, b_stamp, &context, &sender)
+            .unwrap();
+
+        // Release remaining scan requests with newer metadata for market B
+        peer.revision.store(2, Ordering::SeqCst);
+        peer.response_gate
+            .add_permits(tokio::sync::Semaphore::MAX_PERMITS);
+
+        time::timeout(Duration::from_secs(5), scan)
+            .await
+            .expect("timed out waiting for scan")
+            .unwrap()
+            .unwrap();
+
+        let final_b = context.lock().unwrap()[&id_b].clone();
+        assert_eq!(
+            final_b.info.as_ref().unwrap()["market"]["yes_sub_title"],
+            "revision-2"
+        );
+    }
+
+    #[tokio::test]
+    async fn periodic_refresh_does_not_publish_after_receive_exits_on_lifecycle_error() {
+        let peer = peer::Peer::new().await;
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../test_data/instruments.json")).unwrap();
+        let market: Market =
+            serde_json::from_value(fixtures["definitions"]["live"]["market"].clone()).unwrap();
+        let event: Event =
+            serde_json::from_value(fixtures["definitions"]["live"]["event"].clone()).unwrap();
+        let instrument = parse_instrument(&market, &event, UnixNanos::from(1)).unwrap();
+        let id = instrument.id;
+        let (sender, mut output) = tokio::sync::mpsc::unbounded_channel();
+        let sender: EventSender<DataEvent> = sender.into();
+        let clock = get_atomic_clock_realtime();
+
+        let provider = Arc::new(KalshiInstrumentProvider::new(
+            KalshiHttpClient::new(&peer.config).unwrap(),
+            clock,
+            sender.clone(),
+        ));
+
+        let (ws_client, _events) = KalshiWebSocketClient::new(peer.config.clone()).unwrap();
+        let tasks = TaskGroup::new();
+        let context = Arc::new(Mutex::new(HashMap::from([(id, instrument)])));
+
+        let session = Session {
+            provider,
+            lifecycle: Arc::default(),
+            books: BookSyncTracker::new(&[id], Duration::from_secs(10)),
+            tasks: tasks.spawner().unwrap(),
+            instruments: vec![id],
+            context: Arc::clone(&context),
+            demand: Arc::new(Mutex::new(HashMap::default())),
+            sender,
+            connected: Arc::new(AtomicBool::new(true)),
+            ws_client,
+            clock,
+            refresh_interval: Duration::from_millis(20),
+        };
+
+        let (input, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (startup, initialized) = tokio::sync::oneshot::channel();
+        let cancellation = CancellationToken::new();
+
+        let session = session.run(receiver, cancellation, startup);
+        let run = tokio::spawn(session); // tokio-import-ok
+
+        time::timeout(Duration::from_secs(5), async {
+            input.send(KalshiWsEvent::Ready { generation: 0 }).unwrap();
+            initialized.await.unwrap().unwrap();
+
+            while output.try_recv().is_ok() {}
+
+            peer.response_gate
+                .forget_permits(tokio::sync::Semaphore::MAX_PERMITS);
+            peer.revision.store(2, Ordering::SeqCst);
+
+            let baseline = peer.requests.load(Ordering::SeqCst);
+            peer.wait_requests(baseline + 1).await;
+
+            // Trigger a lifecycle error while the periodic scan is pending
+            let frames: Value =
+                serde_json::from_str(include_str!("../test_data/lifecycle.json")).unwrap();
+            let mut frame = frames["frames"][2].clone();
+            frame["type"] = "market_lifecycle_v2".into();
+            frame["msg"]["market_ticker"] = id.symbol.as_str().into();
+            frame["msg"]["open_ts"] = "bad".into();
+            let message: KalshiWsMessage = serde_json::from_value(frame).unwrap();
+            input
+                .send(KalshiWsEvent::Message {
+                    generation: 0,
+                    message,
+                })
+                .unwrap();
+
+            run.await.unwrap();
+        })
+        .await
+        .expect("timed out waiting for receive loop to exit on lifecycle error");
+
+        peer.response_gate
+            .add_permits(tokio::sync::Semaphore::MAX_PERMITS);
+        tasks.begin_shutdown();
+        tasks
+            .finish_shutdown(Duration::from_secs(5), Duration::from_secs(1))
+            .await
+            .unwrap();
+
+        assert!(output.try_recv().is_err());
+        assert_eq!(
+            context.lock().unwrap()[&id].info.as_ref().unwrap()["market"]["yes_sub_title"],
+            "revision-0"
+        );
+    }
+
+    #[tokio::test]
+    async fn generation_change_propagates_already_failed_periodic_refresh() {
+        let peer = peer::Peer::new().await;
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../test_data/instruments.json")).unwrap();
+        let market: Market =
+            serde_json::from_value(fixtures["definitions"]["live"]["market"].clone()).unwrap();
+        let event: Event =
+            serde_json::from_value(fixtures["definitions"]["live"]["event"].clone()).unwrap();
+        let instrument = parse_instrument(&market, &event, UnixNanos::from(1)).unwrap();
+        let id = instrument.id;
+        let (sender, _output) = tokio::sync::mpsc::unbounded_channel();
+        let sender: EventSender<DataEvent> = sender.into();
+        let clock = get_atomic_clock_realtime();
+
+        let provider = Arc::new(KalshiInstrumentProvider::new(
+            KalshiHttpClient::new(&peer.config).unwrap(),
+            clock,
+            sender.clone(),
+        ));
+
+        let (ws_client, _events) = KalshiWebSocketClient::new(peer.config.clone()).unwrap();
+        let tasks = TaskGroup::new();
+        let context = Arc::new(Mutex::new(HashMap::from([(id, instrument)])));
+        let session_cancel = CancellationToken::new();
+        let mut scan_cancel = session_cancel.child_token();
+
+        let session = Session {
+            provider,
+            lifecycle: Arc::default(),
+            books: BookSyncTracker::new(&[id], Duration::from_secs(10)),
+            tasks: tasks.spawner().unwrap(),
+            instruments: vec![id],
+            context,
+            demand: Arc::new(Mutex::new(HashMap::default())),
+            sender,
+            connected: Arc::new(AtomicBool::new(true)),
+            ws_client,
+            clock,
+            refresh_interval: Duration::from_secs(60),
+        };
+
+        // Fail the periodic refresh with a distinct event deserialization error before generation change
+        peer.revision.store(99, Ordering::SeqCst);
+        let mut refresh_done = session.spawn_refresh(&scan_cancel);
+        wait_until_async(|| async { tasks.all_finished() }, Duration::from_secs(5)).await;
+
+        // Restore healthy peer responses so a recovery refresh on the new generation would succeed
+        peer.revision.store(0, Ordering::SeqCst);
+        let requests_after_old_fail = peer.requests.load(Ordering::SeqCst);
+
+        let mut refresh_tick = time::interval(Duration::from_secs(60));
+        let cancellation = CancellationToken::new();
+
+        let err = session
+            .handle_generation_change(
+                &mut scan_cancel,
+                &session_cancel,
+                &mut refresh_done,
+                &mut refresh_tick,
+                &cancellation,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(err.to_string(), "unsupported market economics or family");
+        assert_eq!(
+            peer.requests.load(Ordering::SeqCst),
+            requests_after_old_fail
+        );
+    }
+
+    #[tokio::test]
+    async fn generation_change_ignores_intentionally_canceled_periodic_refresh() {
+        let peer = peer::Peer::new().await;
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../test_data/instruments.json")).unwrap();
+        let market: Market =
+            serde_json::from_value(fixtures["definitions"]["live"]["market"].clone()).unwrap();
+        let event: Event =
+            serde_json::from_value(fixtures["definitions"]["live"]["event"].clone()).unwrap();
+        let instrument = parse_instrument(&market, &event, UnixNanos::from(1)).unwrap();
+        let id = instrument.id;
+        let (sender, mut output) = tokio::sync::mpsc::unbounded_channel();
+        let sender: EventSender<DataEvent> = sender.into();
+        let clock = get_atomic_clock_realtime();
+
+        let provider = Arc::new(KalshiInstrumentProvider::new(
+            KalshiHttpClient::new(&peer.config).unwrap(),
+            clock,
+            sender.clone(),
+        ));
+
+        let (ws_client, _events) = KalshiWebSocketClient::new(peer.config.clone()).unwrap();
+        let tasks = TaskGroup::new();
+        let context = Arc::new(Mutex::new(HashMap::from([(id, instrument)])));
+
+        let session = Session {
+            provider,
+            lifecycle: Arc::default(),
+            books: BookSyncTracker::new(&[id], Duration::from_secs(10)),
+            tasks: tasks.spawner().unwrap(),
+            instruments: vec![id],
+            context: Arc::clone(&context),
+            demand: Arc::new(Mutex::new(HashMap::default())),
+            sender,
+            connected: Arc::new(AtomicBool::new(true)),
+            ws_client,
+            clock,
+            refresh_interval: Duration::from_millis(20),
+        };
+
+        let (input, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (startup, initialized) = tokio::sync::oneshot::channel();
+        let cancellation = CancellationToken::new();
+
+        let run = tokio::spawn(session.run(receiver, cancellation.clone(), startup)); // tokio-import-ok
+
+        time::timeout(Duration::from_secs(5), async {
+            input.send(KalshiWsEvent::Ready { generation: 0 }).unwrap();
+            initialized.await.unwrap().unwrap();
+
+            while output.try_recv().is_ok() {}
+
+            // Hold the periodic refresh mid-flight, then trigger a new generation
+            peer.response_gate
+                .forget_permits(tokio::sync::Semaphore::MAX_PERMITS);
+            let baseline = peer.requests.load(Ordering::SeqCst);
+            peer.wait_requests(baseline + 1).await;
+
+            peer.revision.store(2, Ordering::SeqCst);
+            input.send(KalshiWsEvent::Ready { generation: 1 }).unwrap();
+
+            // Generation change must cancel the old scan and initiate recovery while the old response is still held
+            peer.wait_requests(baseline + 2).await;
+
             peer.response_gate
                 .add_permits(tokio::sync::Semaphore::MAX_PERMITS);
 
             loop {
-                if let DataEvent::Data(Data::Trade(tick)) = output.recv().await.unwrap() {
-                    return tick;
+                if let DataEvent::Data(Data::Instrument(updated)) = output.recv().await.unwrap() {
+                    let InstrumentAny::BinaryOption(option) = *updated else {
+                        panic!("expected binary option");
+                    };
+
+                    if option.info.as_ref().unwrap()["market"]["yes_sub_title"] == "revision-2" {
+                        break;
+                    }
                 }
             }
         })
-        .await;
+        .await
+        .expect("timed out waiting for generation change recovery");
 
         cancellation.cancel();
         run.await.unwrap();
-        let tick = result.expect("queued trade must progress after a slow metadata refresh");
-        assert_eq!(tick.instrument_id, id);
-        assert_eq!(tick.size.as_decimal(), "7.25".parse().unwrap());
-        assert_eq!(tick.price.as_decimal(), "0.123456".parse().unwrap());
     }
 
     #[rstest]
