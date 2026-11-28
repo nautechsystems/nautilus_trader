@@ -97,6 +97,7 @@ pub(crate) struct TestServerState {
     pub order_upgrade_reject: Arc<AtomicBool>,
     pub order_login_cod: Arc<tokio::sync::Mutex<Option<bool>>>,
     pub order_upgrade_queries: Arc<tokio::sync::Mutex<Vec<String>>>,
+    pub instruments_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub instrument_queries: Arc<tokio::sync::Mutex<Vec<GetInstrumentParams>>>,
     pub instrument_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub instrument_fail: Arc<AtomicBool>,
@@ -164,6 +165,7 @@ impl Default for TestServerState {
             order_upgrade_reject: Arc::new(AtomicBool::new(false)),
             order_login_cod: Arc::new(tokio::sync::Mutex::new(None)),
             order_upgrade_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            instruments_payload: Arc::new(tokio::sync::Mutex::new(None)),
             instrument_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             instrument_payload: Arc::new(tokio::sync::Mutex::new(None)),
             instrument_fail: Arc::new(AtomicBool::new(false)),
@@ -220,6 +222,7 @@ impl TestServerState {
         self.instrument_fail.store(false, Ordering::Relaxed);
         self.instrument_response_delay
             .store(false, Ordering::Relaxed);
+        *self.instruments_payload.lock().await = None;
         *self.instrument_payload.lock().await = None;
         self.order_status_queries.lock().await.clear();
         self.instrument_queries.lock().await.clear();
@@ -769,8 +772,9 @@ pub(crate) fn load_test_data(filename: &str) -> serde_json::Value {
     serde_json::from_str(&content).unwrap_or_else(|_| json!({}))
 }
 
-async fn handle_get_instruments() -> Json<serde_json::Value> {
-    Json(load_test_data("http_get_instruments.json"))
+async fn handle_get_instruments(State(state): State<TestServerState>) -> Json<serde_json::Value> {
+    let payload = state.instruments_payload.lock().await.clone();
+    Json(payload.unwrap_or_else(|| load_test_data("http_get_instruments.json")))
 }
 
 async fn handle_get_instrument(

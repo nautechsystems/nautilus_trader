@@ -749,8 +749,9 @@ impl ExecutionClient for AxExecutionClient {
                 for instrument in instruments {
                     self.on_instrument(instrument);
                 }
+
+                self.core.set_instruments_initialized();
             }
-            self.core.set_instruments_initialized();
         }
 
         let orders = {

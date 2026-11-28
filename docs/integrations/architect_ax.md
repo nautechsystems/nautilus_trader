@@ -759,6 +759,8 @@ credentials are valid and have trading permissions.
   if that lookup fails. The execution client caches rates per AX account, apart from
   instruments, and refreshes them each time it connects. Automatic WebSocket reconnects
   keep the cached rates.
+- **Instrument catalog**: The execution client reuses the catalog after it loads instruments.
+  If a load returns no instruments, it requests the catalog again on its next client connection.
 - **Fill commissions**: Real-time fill events from the WebSocket do not include fee data. The adapter
   estimates commission for both tracked fill events and untracked fill reports using the fill quantity,
   absolute fill price, contract multiplier, and account's maker or taker rate. It uses the trade's account ID,

@@ -238,6 +238,7 @@ Released on TBD (UTC).
 - Fixed Architect AX order history requests failing on an empty page with a continuation cursor
 - Fixed Architect AX single-order cancels during pending submission or replacement
 - Fixed Architect AX publishing consecutive identical quotes with the same venue timestamp
+- Fixed Architect AX execution skipping instrument loading on the next client connection after an empty catalog
 - Fixed Betfair instrument loading failures when a runner name is missing (#5718), thanks for reporting @nstkhv
 - Fixed Binance Futures flagging filled orders as unresolved at shutdown (#5679), thanks for reporting @AlphaTraderK
 - Fixed Binance buffered book deltas replaying before their snapshot (#5639), thanks @founderinaction

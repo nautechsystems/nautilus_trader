@@ -228,6 +228,57 @@ async fn test_exec_client_connect_aborts_when_fee_lookup_fails() {
 
 #[rstest]
 #[tokio::test]
+async fn test_exec_client_retries_empty_instruments_on_reconnect() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let account_id = AccountId::from("AX-001");
+    add_test_account_to_cache(&cache, account_id);
+    *state.instruments_payload.lock().await = Some(serde_json::json!({ "instruments": [] }));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+    client.stop().unwrap();
+
+    *state.instruments_payload.lock().await = None;
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    let mut position = load_test_data("http_get_positions.json")["positions"][0].clone();
+    position["account_id"] = serde_json::json!("001");
+    position["symbol"] = serde_json::json!("EURUSD-PERP");
+    *state.positions_payload.lock().await = Some(serde_json::json!({ "positions": [position] }));
+    state.instrument_fail.store(true, Ordering::Relaxed);
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let command =
+        GeneratePositionStatusReports::new(UUID4::new(), 0.into(), None, None, None, None, None);
+    let reports = client.generate_position_status_reports(&command).await;
+    client.disconnect().await.unwrap();
+    client.stop().unwrap();
+
+    let reports = reports.unwrap();
+
+    let [report] = reports.as_slice() else {
+        panic!("Expected one position report, received {}", reports.len());
+    };
+
+    assert_eq!(report.account_id, account_id);
+    assert_eq!(report.instrument_id, instrument_id);
+    assert_eq!(report.position_side, PositionSide::Long);
+    assert_eq!(report.quantity, Quantity::from("2"));
+    assert!(state.instrument_queries.lock().await.is_empty());
+
+    *state.instruments_payload.lock().await = Some(serde_json::json!({}));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+    client.stop().unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_exec_client_refreshes_fees_on_reconnect() {
     let (addr, state) = start_test_server().await.unwrap();
     let (mut client, _rx, cache) = create_test_execution_client(addr);
